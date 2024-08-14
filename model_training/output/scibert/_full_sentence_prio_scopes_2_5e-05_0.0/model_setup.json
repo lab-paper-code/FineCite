@@ -1,0 +1,10 @@
+{
+    "full_training": true,
+    "segment": "sentence_prio",
+    "mode": "scopes",
+    "model_name": "scibert",
+    "batch_size": 2,
+    "max_epoch": 10,
+    "learning_rate": "5e-05",
+    "dropout": 0.0
+}

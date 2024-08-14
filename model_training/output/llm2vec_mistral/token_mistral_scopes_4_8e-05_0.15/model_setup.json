@@ -1,0 +1,10 @@
+{
+    "full_training": false,
+    "segment": "token_mistral",
+    "mode": "scopes",
+    "model_name": "llm2vec_mistral",
+    "batch_size": 4,
+    "max_epoch": 20,
+    "learning_rate": 8e-05,
+    "dropout": 0.15
+}

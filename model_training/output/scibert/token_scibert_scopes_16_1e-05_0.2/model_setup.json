@@ -1,0 +1,10 @@
+{
+    "full_training": false,
+    "segment": "token_scibert",
+    "mode": "scopes",
+    "model_name": "scibert",
+    "batch_size": 16,
+    "max_epoch": 20,
+    "learning_rate": 1e-05,
+    "dropout": 0.2
+}

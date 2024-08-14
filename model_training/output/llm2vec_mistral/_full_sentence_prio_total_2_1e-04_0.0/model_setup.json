@@ -1,0 +1,10 @@
+{
+    "full_training": true,
+    "segment": "sentence_prio",
+    "mode": "total",
+    "model_name": "llm2vec_mistral",
+    "batch_size": 2,
+    "max_epoch": 10,
+    "learning_rate": "1e-04",
+    "dropout": 0.0
+}

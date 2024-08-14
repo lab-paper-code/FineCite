@@ -1,0 +1,10 @@
+{
+    "full_training": false,
+    "segment": "token_llama",
+    "mode": "scopes",
+    "model_name": "llm2vec_llama3",
+    "batch_size": 4,
+    "max_epoch": 20,
+    "learning_rate": 0.00012,
+    "dropout": 0.2
+}
