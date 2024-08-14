@@ -1,5 +1,4 @@
-# CCE
-
+# FINECite
 This is the Repository for the Citation Context Extraction Model.
 
 ### How to contribute:
