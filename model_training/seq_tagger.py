@@ -29,33 +29,41 @@ def set_seed(seed_value=42):
     torch.cuda.manual_seed_all(seed_value)
 set_seed()
 
+#Use the ArgumentParser library
 parser = argparse.ArgumentParser(description='Seq_tagger parser')
 
-#input arguments
+# ---input arguments---
+
+#choose the model
 parser.add_argument('--model_name', required=True, help='scibert llm2vec_mistral llm2vec_llama3')
+
+#choose the segment type 
 parser.add_argument('--segment', required=True, help='sentence_prio sentence_majo token_scibert token_mistral token_llama')
+
+#choose the model running tpye by scopes or total
 parser.add_argument('--mode', required=True, help='scopes total')
 
+#choose the batch size of input
 parser.add_argument('--batch_size', default=2, help='1 2 4')
+
+#choose the learning rate of model training
 parser.add_argument('--learning_rate', default=1e-05, help='3e-05 5e-5 8e-5 1e-04')
+
+#choose the dropout parameter during model training
 parser.add_argument('--dropout', default=0.0, help='0.04 0.05 0.06 0.07 0.1 0.12 0.15 0.18 0.2')
 
+#if you want the result of the full data training, tag the '--full_trainging' on right side of the execution
 parser.add_argument('--full_training', action='store_true', help='')
+
 parser.add_argument('--debug', action='store_true', help='')
 parser.add_argument('--debug_size', default=5, help='')
+
+#if you want the reesult with out background scope, tag the '--no_background' on right side of the execution
 parser.add_argument("--no_background", action='store_true', help='')
 
 #execution example
 '''
-CUDA_VISIBLE_DEVICES=0 nohup bash -c 'for lr in 3e-05 5e-5 8e-5 1e-04 ;
-        do
-            for bs in 0.05 0.1 0.15;
-            do
-                python3 -u new_seq_tagger.py --model_name llm2vec_llama3 --segment token_llama --mode scopes --learning_rate ${lr} --dropout ${bs};
-            done;
-        done;
-    done;
-done'> output/llm2vec_llama3/log.txt
+python3 -u new_seq_tagger.py --model_name scibert --segment token_scibert --mode scopes --learning_rate 5e-05 --dropout 0.1 --batch_size 2 --full_training
 '''
 
 #static arguments
@@ -67,6 +75,7 @@ args.dropout = float(args.dropout)
 
 args.segment_type = args.segment.split('_')[0]
 
+#settings of the dir path
 args.data_dir = f"../data/model_training/data/seq_tagger/fine_cite/{args.segment}_69__07-01-02/"
 args.base_model_dir = f'../data/model_training/llm2vec_models/{args.model_name}/'
 args.model_output_dir = f"../data/model_training/output/seq_tagger/fine_cite/{args.model_name}/{args.segment}_{args.mode}_{args.batch_size}_{args.learning_rate}_{args.dropout}/"
@@ -174,7 +183,6 @@ class SeqTagger(torch.nn.Module):
         self.global_step = 0
         self.dropout = torch.nn.Dropout(self.args.dropout)
         self.loss_fn = CrossEntropyLoss(weight=torch.BFloat16Tensor(self.args.label_weights).to(DEVICE))
-
         self.metric_multi_acc = torchmetrics.Accuracy(task='multiclass', num_classes=self.args.num_labels)
         self.metric_acc = torchmetrics.Accuracy(task='binary', num_classes=2)
         self.metric_macro_f1 = torchmetrics.F1Score(average='macro', num_classes=self.args.num_labels, task='multiclass')
@@ -255,17 +263,19 @@ class SeqTagger(torch.nn.Module):
                 LMmodel,
                 model_desc['source_peft_weights1']
                 )
-                LMmodel = LMmodel.merge_and_unload()  # Merge Peft weights into base model
+                # Merge Peft weights into base model
+                LMmodel = LMmodel.merge_and_unload()
 
-                # Loading supervised model. This loads the trained LoRA weights on top of MNTP model. Hence the final weights are -- Base model + MNTP (LoRA) + supervised (LoRA).
+                # Loading supervised model. 
+                # This loads the trained LoRA weights on top of MNTP model. Hence the final weights are -- Base model + MNTP (LoRA) + supervised (LoRA).
                 LMmodel = PeftModel.from_pretrained(
                     LMmodel,
                     model_desc['source_peft_weights2'],
                 )
-                LMmodel = LMmodel.merge_and_unload()  # Merge Peft weights into base model
+                # Merge Peft weights into base model
+                LMmodel = LMmodel.merge_and_unload()
 
-
-                    
+                #Save the model weights on base_model_dir
                 LMmodel.save_pretrained(self.args.base_model_dir)
                 LMmodel = None
                 gc.collect()
@@ -290,7 +300,11 @@ class SeqTagger(torch.nn.Module):
             )
             #load peft model
             self.model.resize_token_embeddings(len(self.tokenizer))
+            
+            #instantiate a LoraConfig class
             self.peft_config = LoraConfig(target_modules=['embed_tokens',"v_proj", "q_proj", "up_proj", "o_proj", "k_proj", "down_proj", "gate_proj" ], inference_mode=False, r=16, lora_alpha=32, lora_dropout=0.05)         
+            
+            # The get_peft_model function will take the model and prepare it for training with the PEFT method
             self.model = get_peft_model(self.model, self.peft_config)
             print(self.model.print_trainable_parameters())
             
@@ -298,16 +312,19 @@ class SeqTagger(torch.nn.Module):
         #load empty classifier
         self.classifier = torch.nn.Linear(self.config.hidden_size, self.args.num_labels, dtype=torch.bfloat16)
 
+    #save the model weights
     def save_pretrained(self, path):
         self.model.save_pretrained(path, save_embedding_layers=True)
         torch.save(self.classifier.state_dict(),os.path.join(path, 'classifier.pt'))
     
+    #load the classifier
     def load_classifier(self, path):
         self.classifier.load_state_dict(torch.load(os.path.join(path, 'classifier.pt'), weights_only=True))
 
     def get_tokenizer(self):
         return self.tokenizer
-
+    
+    # write the metadata of model setup
     def print_model_setup(self):
         print(f'Logging model_setup')
         with open(os.path.join(self.args.log_output_dir, f'model_setup.json'), 'w') as f_out:
@@ -327,7 +344,7 @@ class SeqTagger(torch.nn.Module):
     
     def epoch(self, epoch):
             self.current_epoch += 1
-
+            
     def configure_optimizers(self, num_training_steps):
         """Prepare optimizer and schedule (linear warmup and decay)"""
         self.args.num_training_steps = num_training_steps
@@ -353,6 +370,7 @@ class SeqTagger(torch.nn.Module):
         )
         return
 
+    # Calcutae the logits, loss by classifier and CrossEntropyLoss
     def forward(self, **inputs):
         # load data to device
         ids = inputs["input_ids"].to(DEVICE, dtype = torch.long)
@@ -369,27 +387,9 @@ class SeqTagger(torch.nn.Module):
         cls_output_state = self.dropout(cls_output_state)
         logits = self.classifier(cls_output_state)
 
-        #calculate loss
+        #calculate loss by CrossEntropyLoss
         loss = self.loss_fn(logits, labels,) if "labels" in inputs else None
         return loss, logits, labels,
-
-    # def training_step(self, batch):
-    #     '''performs training step and returns loss (as well as logging it)'''
-    #     outputs = self(**batch)
-    #     loss = outputs[0]
-    #     #self.log("loss", loss)
-    #     return loss
-
-    # def evaluation_step(self, batch):
-    #     outputs = self(**batch)
-    #     val_loss, logits, labels = outputs
-    #     #self.log("val_loss", val_loss)
-    #     if self.num_labels >= 1:
-    #         preds = torch.argmax(logits, axis=1)
-    #     elif self.num_labels == 1:
-    #         preds = logits.squeeze()
-    #     res = {"loss": val_loss, "preds": preds, "labels": labels, 'logits': logits}
-    #     return res
     
     def train_epoch(self, train_dataloader):
         self.train()
@@ -424,6 +424,7 @@ class SeqTagger(torch.nn.Module):
         loss = torch.stack([x["loss"] for x in outputs]).mean()
         val_res = {}
         val_res[f'loss']= loss.tolist()
+        # split the evaluation metrics by mode
         if self.args.mode == 'scopes':
 
             val_res[f'acc'] = self.metric_multi_acc(preds, labels).tolist()
@@ -446,6 +447,7 @@ class SeqTagger(torch.nn.Module):
             val_res[f'backg_f1'] = self.metric_f1(backg_preds, backg_labels).tolist()
 
             early_stopping_metric = val_res[f'macro_f1']
+        
         elif self.args.mode == 'total':
             val_res[f'acc'] = self.metric_acc(preds, labels).tolist()
             val_res[f'total_f1'] = self.metric_f1(preds, labels).tolist()
@@ -552,5 +554,4 @@ for epoch in tqdm(range(args.max_epochs)):
             model.save_pretrained(args.model_output_dir)
     else:
         if epoch >= best_value_epoch + args.patients:
-            #and val_metric >= best_value - 0.01: -> for Full training
             break
