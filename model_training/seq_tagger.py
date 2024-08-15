@@ -36,14 +36,27 @@ parser.add_argument('--model_name', required=True, help='scibert llm2vec_mistral
 parser.add_argument('--segment', required=True, help='sentence_prio sentence_majo token_scibert token_mistral token_llama')
 parser.add_argument('--mode', required=True, help='scopes total')
 
-parser.add_argument('--batch_size', default=2, help='')
-parser.add_argument('--learning_rate', default=1e-05, help='')
-parser.add_argument('--dropout', default=0.0, help='')
+parser.add_argument('--batch_size', default=2, help='1 2 4')
+parser.add_argument('--learning_rate', default=1e-05, help='3e-05 5e-5 8e-5 1e-04')
+parser.add_argument('--dropout', default=0.0, help='0.04 0.05 0.06 0.07 0.1 0.12 0.15 0.18 0.2')
 
 parser.add_argument('--full_training', action='store_true', help='')
 parser.add_argument('--debug', action='store_true', help='')
 parser.add_argument('--debug_size', default=5, help='')
 parser.add_argument("--no_background", action='store_true', help='')
+
+#execution example
+'''
+CUDA_VISIBLE_DEVICES=0 nohup bash -c 'for lr in 3e-05 5e-5 8e-5 1e-04 ;
+        do
+            for bs in 0.05 0.1 0.15;
+            do
+                python3 -u new_seq_tagger.py --model_name llm2vec_llama3 --segment token_llama --mode scopes --learning_rate ${lr} --dropout ${bs};
+            done;
+        done;
+    done;
+done'> output/llm2vec_llama3/log.txt
+'''
 
 #static arguments
 args = parser.parse_args()
@@ -54,9 +67,9 @@ args.dropout = float(args.dropout)
 
 args.segment_type = args.segment.split('_')[0]
 
-args.data_dir = f"/raid/deallab/CCE_Data/model_training/data/seq_tagger/fine_cite/{args.segment}_69__07-01-02/"
-args.base_model_dir = f'/raid/deallab/CCE_Data/model_training/llm2vec_models/{args.model_name}/'
-args.model_output_dir = f"/raid/deallab/CCE_Data/model_training/output/seq_tagger/fine_cite/{args.model_name}/{args.segment}_{args.mode}_{args.batch_size}_{args.learning_rate}_{args.dropout}/"
+args.data_dir = f"../data/model_training/data/seq_tagger/fine_cite/{args.segment}_69__07-01-02/"
+args.base_model_dir = f'../data/model_training/llm2vec_models/{args.model_name}/'
+args.model_output_dir = f"../data/model_training/output/seq_tagger/fine_cite/{args.model_name}/{args.segment}_{args.mode}_{args.batch_size}_{args.learning_rate}_{args.dropout}/"
 if args.debug:
     args.log_output_dir = f"./output/debug/{args.model_name}/{args.segment}_{args.mode}_{args.batch_size}_{args.learning_rate}_{args.dropout}_{datetime.now().strftime('%m_%d_%H_%M_%S')}/"
 elif args.full_training:
@@ -73,7 +86,7 @@ os.makedirs(args.log_output_dir, exist_ok=True)
 
 args.special_token = ['#AUTHOR_TAG','#TAUTHOR_TAG']
 args.num_labels = 4 if args.mode == 'scopes' else 2
-with open(f'../../../postprocessing/output/finecite_{args.mode}_weights.json') as weights_file:
+with open(f'./finecite_{args.mode}_weights.json') as weights_file:
     weights = json.load(weights_file)
 args.label_weights = weights[args.segment]
 
