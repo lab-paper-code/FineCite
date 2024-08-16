@@ -63,7 +63,7 @@ parser.add_argument("--no_background", action='store_true', help='')
 
 #execution example
 '''
-python3 -u new_seq_tagger.py --model_name scibert --segment token_scibert --mode scopes --learning_rate 5e-05 --dropout 0.1 --batch_size 2 --full_training
+python3 -u seq_tagger.py --model_name scibert --segment token_scibert --mode scopes --learning_rate 5e-05 --dropout 0.1 --batch_size 2 --full_training
 '''
 
 #static arguments
