@@ -267,7 +267,8 @@ class SeqTagger(torch.nn.Module):
                 LMmodel = LMmodel.merge_and_unload()
 
                 # Loading supervised model. 
-                # This loads the trained LoRA weights on top of MNTP model. Hence the final weights are -- Base model + MNTP (LoRA) + supervised (LoRA).
+                # This loads the trained LoRA weights on top of MNTP model. 
+                # Hence the final weights are -- Base model + MNTP (LoRA) + supervised (LoRA).
                 LMmodel = PeftModel.from_pretrained(
                     LMmodel,
                     model_desc['source_peft_weights2'],
@@ -278,11 +279,13 @@ class SeqTagger(torch.nn.Module):
                 #Save the model weights on base_model_dir
                 LMmodel.save_pretrained(self.args.base_model_dir)
                 LMmodel = None
+                #Perform garbage collection to free circular reference objects from memory.
                 gc.collect()
 
             # If model in dir_path, Implement the quantization
             self.config = AutoConfig.from_pretrained(self.args.base_model_dir)
 
+            # Try to apply QLoRA
             self.bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
@@ -290,6 +293,7 @@ class SeqTagger(torch.nn.Module):
                 bnb_4bit_use_double_quant=True,
                 bnb_4bit_quant_storage=torch.bfloat16,
             )
+            # Quantize the base model
             self.model = AutoModel.from_pretrained(
                 self.args.base_model_dir,
                 trust_remote_code=True,
@@ -304,10 +308,10 @@ class SeqTagger(torch.nn.Module):
             #instantiate a LoraConfig class
             self.peft_config = LoraConfig(target_modules=['embed_tokens',"v_proj", "q_proj", "up_proj", "o_proj", "k_proj", "down_proj", "gate_proj" ], inference_mode=False, r=16, lora_alpha=32, lora_dropout=0.05)         
             
+            # QLoRA : Quantized base model + LoRA
             # The get_peft_model function will take the model and prepare it for training with the PEFT method
             self.model = get_peft_model(self.model, self.peft_config)
             print(self.model.print_trainable_parameters())
-            
         
         #load empty classifier
         self.classifier = torch.nn.Linear(self.config.hidden_size, self.args.num_labels, dtype=torch.bfloat16)
