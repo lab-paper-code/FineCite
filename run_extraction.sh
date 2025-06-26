@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 nohup python3 -u train.py --model_name scibert --dataset multicite_extraction --task ext --ext_type linear --save_model --batch_size 4 --learning_rate 5e-05 --seed 10 > output/extraction_ablation.txt &
