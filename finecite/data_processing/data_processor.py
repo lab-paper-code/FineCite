@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import json
 from typing import List
 from collections import Counter
 
@@ -37,7 +38,7 @@ class Processor(object):
         with open(os.path.join(self.path, f'{split}.jsonl')) as f:
             for line in f:
                 if not line.strip(): continue
-                data.append(line)
+                data.append(json.loads(line))
         if self.args.debug and self.args.debug_size:
             data = data[:self.args.debug_size]
         return data
@@ -57,7 +58,6 @@ class Processor(object):
         sorted_counter = sorted(counter.items())
         counter_sum = sum(counter.values())
         ratio_scopes = [counter_sum / (len(counter) * c )for l, c in sorted_counter]
-        print(ratio_scopes)
         return ratio_scopes
 
 class FineciteProcessor(Processor):
@@ -65,13 +65,13 @@ class FineciteProcessor(Processor):
         data = self.load_jsonl(split)
         examples = []
         for idx, sample in enumerate(data):
-            word_list =  sample['paragraph']
-            text = ' '.join(sample['paragraph'])
+            word_list =  sample['masked_paragraph']
+            text = ' '.join(sample['masked_paragraph'])
             word_labels = sample['annotations']
             examples.append({
                 'id': idx,
                 'text': text,
-                'world_list': word_list,
+                'word_list': word_list,
                 'word_labels': word_labels
             })
         return examples
@@ -93,7 +93,7 @@ class FineciteProcessor(Processor):
                 token_annotation_2.extend([lbl2] * len(word_ids))
             
             # convert uniform labeling to IOB labeling
-            if self.args.ext_type in ['linear', 'bilstm']:
+            if self.args.iob_labels:
                 token_annotation_1, token_annotation_2 = self._convert_to_iob(token_annotation_1, num_labels=3), self._convert_to_iob(token_annotation_2, num_labels=3)
                 
             # restrict input_ids to max len
@@ -136,7 +136,7 @@ class FineciteProcessor(Processor):
             features.append({
                     'input_ids': torch.tensor(input_ids), 
                     'input_mask': torch.tensor(input_mask), 
-                    'token_labels': torch.tensor([token_annotation_1, token_annotation_2]) if len(example['word_labels']) == 2 else torch.tensor([token_annotation_1])
+                    'token_labels': torch.tensor([token_annotation_1, token_annotation_2], dtype=torch.long) if len(example['word_labels']) == 2 else torch.tensor([token_annotation_1], dtype=torch.long)
                     })
             
         # calculate class weights
@@ -151,27 +151,26 @@ class CLSProcessor(Processor):
     def read_data(self, split: str)  -> List[dict]:
         data = self.load_csv(split)
         examples = []
-        for idx, row in data.iterrows():
+        for idx, row in enumerate(data):
             text = row['context']
-            intent_label = eval(row['intent_label'])
+            intent_labels = eval(row['intent_labels'])
             examples.append({
                 'id': idx,
                 'text': text,
-                'intent_label': intent_label,
+                'intent_labels': intent_labels,
             })
         return examples
 
     def create_features(self, examples: List[dict]):
         features = []
-        
         # calculate class weights
-        flat_labels = [l for example in examples for l in example['intent_label']]
+        flat_labels = [l for example in examples for l in example['intent_labels']]
         weights = self._calc_class_weights(flat_labels)
         num_labels = len(weights)
         
         for example in examples:
             text = example['text']
-            intent_label = example['intent_label']
+            intent_labels = example['intent_labels']
             
             # tokenize txt input
             input_ids = self.tokenizer.encode(text, add_special_tokens=False)
@@ -196,22 +195,22 @@ class CLSProcessor(Processor):
             assert len(input_ids) == self.max_len
             
             # make one/multiple hot encoded from labels
-            intent_label = [1 if i in intent_label else 0 for i in range(num_labels)]
+            intent_labels = [1 if i in intent_labels else 0 for i in range(num_labels)]
                 
             features.append({
                     'input_ids': torch.tensor(input_ids), 
                     'input_mask': torch.tensor(input_mask), 
-                    'intent_label': torch.tensor(intent_label, dtype = torch.float16), 
+                    'intent_labels': torch.tensor(intent_labels, dtype = torch.float16), 
                     })
         
         return features, weights, num_labels
     
     
-def load_processor(args) -> Processor:
+def load_processor(args, tokenizer) -> Processor:
     match args.dataset:
         case 'finecite':
-            return FineciteProcessor(args)
+            return FineciteProcessor(args, tokenizer)
         case 'acl-arc'| 'act2'| 'ACT-D'| 'ACT-ND'|'scicite'| 'multicite':
-            return CLSProcessor(args)
+            return CLSProcessor(args, tokenizer)
         case _:
             raise NotImplementedError(f'There is no processor for the dataset {args.dataset}')

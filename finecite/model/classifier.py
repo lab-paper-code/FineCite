@@ -2,41 +2,28 @@ import torch
 from torch.nn import Parameter, CrossEntropyLoss
 from torch import nn
 
+
 class ClsClassifier(torch.nn.Module):
-    """
-    Classification classifier for citation context analysis.
-    
-    This classifier processes hidden states from a transformer model and performs
-    classification based on different citation context types (influence, perception, background).
-    It supports multiple classification strategies through the cls_type parameter.
-    
-    Args:
-        config: Model configuration containing hidden_size and other parameters
-        args: Arguments object containing classification parameters like cls_type, dropout, etc.
-    
-    Attributes:
-        dropout: Dropout layer for regularization
-        pre_cls: Linear layer for processing concatenated embeddings (3 types)
-        pre_cls2: Linear layer for processing concatenated embeddings (2 types)
-        cls: Final classification layer
-    """
-    def __init__(self, config, args):
-        super().__init__()
-        self.config = config
-        self.args = args
-        self.weights = args.cls_weights
+    def __init__(self, args, config):
+        self.dtype = args.dtype
+        self.cls_type = args.cls_type
         
-        self.dropout = torch.nn.Dropout(self.args.dropout)
-        self.pre_cls = torch.nn.Linear(self.config.hidden_size * 3, self.config.hidden_size, dtype=self.args.dtype).to(self.args.device)
-        self.pre_cls_abl = torch.nn.Linear(self.config.hidden_size * 2, self.config.hidden_size, dtype=self.args.dtype).to(self.args.device)
-        self.cls = torch.nn.Linear(self.config.hidden_size, self.args.num_labels, dtype=self.args.dtype).to(self.args.device)
+        super().__init__()
+        self.dropout = torch.nn.Dropout(args.dropout)
+        
+        if args.cls_type == 'linear':
+            self.pre_cls = torch.nn.Linear(config.hidden_size * 3, config.hidden_size, dtype=args.dtype).to(args.device)
+        if args.cls_type in ['inf', 'perc', 'back']:
+            self.pre_cls_abl = torch.nn.Linear(config.hidden_size * 2, config.hidden_size, dtype=args.dtype).to(args.device)
+        self.cls = torch.nn.Linear(config.hidden_size, args.num_labels, dtype=args.dtype).to(args.device)
+        
 
     def _extract_cont_emb(self, hs, tok_lbl):
         res = []
         for i in range(1,4):
             denom = torch.sum(tok_lbl == i, -1, keepdim=True) + 1e-07
             feat = torch.sum(hs * (tok_lbl ==i).unsqueeze(-1), dim=1) / denom 
-            res.append(feat.to(self.args.dtype))
+            res.append(feat.to(self.dtype))
         mask = (tok_lbl==1).to(torch.int) | (tok_lbl==2).to(torch.int) | (tok_lbl==3).to(torch.int)
         denom = torch.sum(mask, -1, keepdim=True) + 1e-07
         tok_mean = torch.sum(hs * (mask).unsqueeze(-1), dim=1) / denom 
@@ -44,7 +31,7 @@ class ClsClassifier(torch.nn.Module):
 
     def _process_hidden_states(self, hidden_states, tok_lbl):
         (inf_emb, perc_emb, back_emb), total_mean = self._extract_cont_emb(hidden_states, tok_lbl)
-        match self.args.cls_type:
+        match self.cls_type:
             case 'balanced':
                 cls_emb = torch.mean(torch.stack((inf_emb, perc_emb,back_emb)), dim=0)
             case 'total':
@@ -72,22 +59,23 @@ class ClsClassifier(torch.nn.Module):
         return out
     
 class ExtClassifier(torch.nn.Module):
-    def __init__(self, config, args, num_labels):
+    def __init__(self, args, config):
         super().__init__()
-        self.config = config
-        self.args = args
-        self.dropout = torch.nn.Dropout(self.args.dropout)
-        self.cls = torch.nn.Linear(self.config.hidden_size, num_labels, dtype=self.args.dtype).to(self.args.device)
-        self.lstm = torch.nn.LSTM(self.config.hidden_size, self.config.hidden_size // 2, num_layers=1, bidirectional=True, dtype=self.args.dtype, batch_first=True)
+        self.ext_type = args.ext_type
+        self.dropout = torch.nn.Dropout(args.dropout)
+        self.cls = torch.nn.Linear(config.hidden_size, args.num_labels, dtype=args.dtype).to(args.device)
+        if args.ext_type in ['bilstm', 'bilstm_crf']:
+            self.lstm = torch.nn.LSTM(config.hidden_size, config.hidden_size // 2, num_layers=1, bidirectional=True, dtype=args.dtype, batch_first=True).to(args.device)
 
     def forward(self, hidden_state):
         pre_out = self.dropout(hidden_state)
-        if self.args.ext_type in ['bilstm', 'bilstm_crf']:
+        if self.ext_type in ['bilstm', 'bilstm_crf']:
             pre_out, self.hidden = self.lstm(pre_out)
         out = self.cls(pre_out)
-        if self.args.ext_type in ['linear', 'bilstm']:
+        if self.ext_type in ['linear', 'bilstm']:
             out = torch.transpose(out, 1, 2)
         return out
+    
 
 
 # implementation based on https://medium.com/towards-data-science/implementing-a-linear-chain-conditional-random-field-crf-in-pytorch-16b0b9c4b4ea

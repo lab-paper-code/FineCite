@@ -1,0 +1,7 @@
+# Directories
+/.cache
+/output
+**/__pycache__
+
+# Files
+.env
